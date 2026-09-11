@@ -9,13 +9,13 @@ Repository: `git@github.com:mpecha/k8s-course.git`
 
 | Directory | Description |
 |-----------|-------------|
-| [`k8s-cluster/kind`](k8s-cluster/kind/README.md) | Cluster built with [kind](https://kind.sigs.k8s.io/): 1 control-plane + 5 workers |
-| [`k8s-cluster/k3d`](k8s-cluster/k3d/README.md) | Cluster built with [k3d](https://k3d.io/) (k3s in Docker): 1 server + 5 agents, nodes can be added and removed at runtime |
+| [`1-k8s-cluster/kind`](1-k8s-cluster/kind/README.md) | Cluster built with [kind](https://kind.sigs.k8s.io/): 1 control-plane + 5 workers |
+| [`1-k8s-cluster/k3d`](1-k8s-cluster/k3d/README.md) | Cluster built with [k3d](https://k3d.io/) (k3s in Docker): 1 server + 5 agents, nodes can be added and removed at runtime |
 
 Both variants share the same layout and workflow:
 
 ```text
-k8s-cluster/<flavour>/
+1-k8s-cluster/<flavour>/
 ├── Dockerfile          tools image: kind or k3d, kubectl, helm
 ├── compose.yaml        tools container with Docker socket and host network
 ├── <flavour>.yaml      cluster definition
@@ -31,7 +31,7 @@ k8s-cluster/<flavour>/
 Pick a flavour and run the scripts through the tools container:
 
 ```sh
-cd k8s-cluster/k3d        # or k8s-cluster/kind
+cd 1-k8s-cluster/k3d        # or 1-k8s-cluster/kind
 
 docker compose run --rm k8s scripts/create-cluster.sh   # create cluster "dev"
 docker compose run --rm k8s kubectl get nodes           # run any command
