@@ -1,0 +1,15 @@
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+
+metadata:
+  name: dev
+
+servers: 1
+agents: 5
+
+options:
+  k3s:
+    nodeLabels:
+      - label: workload=general
+        nodeFilters:
+          - agent:*
