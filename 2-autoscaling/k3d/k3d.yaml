@@ -7,12 +7,7 @@ metadata:
 # Same minor version as the cluster-autoscaler image in compose.yaml
 image: rancher/k3s:v1.33.13-k3s1
 
+# Agents get meaningful names (app, load), which k3d only allows for nodes added
+# with `k3d node create`; see scripts/create-node.sh
 servers: 1
-agents: 1
-
-options:
-  k3s:
-    nodeLabels:
-      - label: workload=general
-        nodeFilters:
-          - agent:*
+agents: 0

@@ -13,7 +13,7 @@ spec:
         app: php-apache
     spec:
       nodeSelector:
-        workload: general
+        workload: app
       containers:
         - name: php-apache
           image: registry.k8s.io/hpa-example

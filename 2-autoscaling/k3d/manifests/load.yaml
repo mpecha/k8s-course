@@ -14,6 +14,13 @@ spec:
       labels:
         app: load
     spec:
+      # Visitors run on their own node, never on the autoscaled agents
+      nodeSelector:
+        workload: load
+      tolerations:
+        - key: workload
+          value: load
+          effect: NoSchedule
       containers:
         - name: load
           image: busybox:1.37

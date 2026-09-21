@@ -3,11 +3,11 @@ set -e
 
 mkdir -p .kube
 
-# Make every agent look like a NODE_CPU-core machine to the scheduler
-RESERVED="$(( $(nproc) - ${NODE_CPU:-2} ))"
-
+# Server only; agents are added by name below
 k3d cluster create \
-  --config k3d.yaml \
-  --k3s-arg "--kubelet-arg=system-reserved=cpu=${RESERVED}@agent:*"
+  --config k3d.yaml
+
+scripts/create-node.sh app    # k3d-auto-app-0: first node of the autoscaled group
+scripts/create-node.sh load   # k3d-auto-load-0: fixed node for the load generator
 
 kubectl get nodes

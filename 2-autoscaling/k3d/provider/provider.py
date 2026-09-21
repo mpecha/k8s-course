@@ -19,11 +19,14 @@ import externalgrpc_pb2_grpc as pb_grpc
 CLUSTER = os.environ.get("CLUSTER", "auto")
 MIN = int(os.environ.get("MIN", "1"))
 MAX = int(os.environ.get("MAX", "5"))
-NODE_CPU = int(os.environ.get("NODE_CPU", "2"))
 PORT = os.environ.get("PORT", "8086")
 
 GROUP = "agents"
-PREFIX = f"k3d-{CLUSTER}-agent-"
+# Members of the group are the "app" nodes made by scripts/create-node.sh: Docker
+# label autoscaling.group=agents, Kubernetes label workload=app. The load node
+# belongs to no group, so the autoscaler leaves it alone.
+DOCKER_LABEL = f"autoscaling.group={GROUP}"
+NODE_LABEL = ("workload", "app")
 
 lock = threading.Lock()
 creating = set()  # node names with `k3d node create` in flight
@@ -39,7 +42,7 @@ def running():
     out = subprocess.run(
         ["docker", "ps", "--format", "{{.Names}}",
          "--filter", f"label=k3d.cluster={CLUSTER}",
-         "--filter", "label=k3d.role=agent"],
+         "--filter", f"label={DOCKER_LABEL}"],
         check=True, capture_output=True, text=True).stdout
     return set(out.split())
 
@@ -54,17 +57,14 @@ def members():
     return nodes
 
 
-def create_node(name):
+def node_name(node_id):
+    return f"k3d-{CLUSTER}-app-{node_id}-0"
+
+
+def create_node(node_id):
+    name = node_name(node_id)
     try:
-        image = run("docker", "inspect", f"k3d-{CLUSTER}-server-0",
-                    "--format", "{{.Config.Image}}").strip()
-        reserved = os.cpu_count() - NODE_CPU
-        # k3d names the container k3d-<name>-0
-        run("k3d", "node", "create", name[len("k3d-"):-len("-0")],
-            "--cluster", CLUSTER, "--role", "agent", "--image", image,
-            "--k3s-node-label", "workload=general",
-            "--k3s-arg", f"--kubelet-arg=system-reserved=cpu={reserved}",
-            "--wait", "--timeout", "2m")
+        run("scripts/create-node.sh", "app", node_id)
     except subprocess.CalledProcessError as e:
         # Like an EC2 instance that fails to launch: remove it, the group shrinks
         # back and the autoscaler tries again
@@ -96,7 +96,7 @@ class Provider(pb_grpc.CloudProviderServicer):
             nodeGroups=[pb.NodeGroup(id=GROUP, minSize=MIN, maxSize=MAX)])
 
     def NodeGroupForNode(self, request, context):
-        if request.node.name.startswith(PREFIX):
+        if request.node.labels.get(NODE_LABEL[0]) == NODE_LABEL[1]:
             return pb.NodeGroupForNodeResponse(
                 nodeGroup=pb.NodeGroup(id=GROUP, minSize=MIN, maxSize=MAX))
         return pb.NodeGroupForNodeResponse(nodeGroup=pb.NodeGroup())
@@ -118,10 +118,10 @@ class Provider(pb_grpc.CloudProviderServicer):
                           f"size {size} + delta {request.delta} is outside 1..{MAX}")
         print(f"scale up {GROUP}: {size} -> {size + request.delta}")
         for _ in range(request.delta):
-            name = f"{PREFIX}{uuid.uuid4().hex[:6]}-0"
+            node_id = uuid.uuid4().hex[:6]
             with lock:
-                creating.add(name)
-            threading.Thread(target=create_node, args=(name,)).start()
+                creating.add(node_name(node_id))
+            threading.Thread(target=create_node, args=(node_id,)).start()
         return pb.NodeGroupIncreaseSizeResponse()
 
     def NodeGroupDeleteNodes(self, request, context):
@@ -159,5 +159,5 @@ if __name__ == "__main__":
     server.add_insecure_port(f"127.0.0.1:{PORT}")
     server.start()
     print(f"node group '{GROUP}' of cluster '{CLUSTER}': min {MIN}, max {MAX}, "
-          f"{NODE_CPU} CPU per node, listening on 127.0.0.1:{PORT}")
+          f"listening on 127.0.0.1:{PORT}")
     server.wait_for_termination()

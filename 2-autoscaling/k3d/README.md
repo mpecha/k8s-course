@@ -23,20 +23,38 @@ plays the Auto Scaling group: it adds and removes k3d agent nodes.
 Moving to AWS means replacing the provider with `--cloud-provider=aws` and an ASG;
 the app, the HPA and the autoscaler flags stay the same.
 
+## Nodes
+
+```text
+NAME                     STATUS   ROLES
+k3d-auto-server-0        Ready    control-plane,master
+k3d-auto-app-0           Ready    app
+k3d-auto-app-<id>-0      Ready    app                    (added and removed by the autoscaler)
+k3d-auto-load-0          Ready    load
+```
+
+| Role | Label | Runs | Autoscaled |
+|---|---|---|---|
+| `app` | `workload=app` | only the `php-apache` pods; looks like a 2-CPU machine, 4 pods fill it | yes, 1 to 5 nodes |
+| `load` | `workload=load`, taint `workload=load:NoSchedule` | only the load generator, which tolerates the taint | no, always 1 |
+| `control-plane` | | k3s server and system pods | no |
+
 ## Layout
 
 | File | Purpose |
 |------|---------|
 | `Dockerfile` | Tools image (k3d, kubectl, helm) plus Python gRPC for the provider |
 | `compose.yaml` | Services `k8s` (tools), `provider`, `autoscaler` |
-| `k3d.yaml` | Cluster `auto`: 1 server, 1 agent labelled `workload=general` |
+| `k3d.yaml` | Cluster `auto`: k3s version and 1 server; the agents are added by `scripts/create-node.sh` |
 | `provider/provider.py` | The fake Auto Scaling group (gRPC server on `127.0.0.1:8086`) |
 | `provider/client.py` | Call the provider by hand: `groups`, `nodes`, `increase N`, `delete NODE` |
 | `provider/externalgrpc.proto` | Cluster Autoscaler provider API, copied from upstream |
 | `autoscaler/cloud-config.yaml` | Tells the autoscaler where the provider listens |
 | `manifests/app.yaml` | `php-apache` Deployment (500m CPU per pod), Service, HPA 1 to 6 pods at 50 % CPU |
-| `manifests/load.yaml` | Load generator |
+| `manifests/load.yaml` | Load generator: 4 "visitors", running only on the `workload=load` agent |
 | `scripts/create-cluster.sh`, `scripts/delete-cluster.sh` | Create and delete everything |
+| `scripts/create-node.sh` | Adds a named agent (`app` or `load`); also called by the provider on scale-up |
+| `scripts/watch.sh` | One-screen live view of the demo |
 
 ## Build
 
@@ -94,7 +112,7 @@ HPA     cpu 78% of target 50%   replicas 4 -> 6   (min 1, max 6)
 PODS    4 running, 0 starting, 2 waiting for a node
 
 AGENTS  1
-  k3d-auto-agent-0             Ready     4 pods
+  k3d-auto-app-0               Ready     4 pods
 
 AUTOSCALER (UTC)
   19:47:06  Pod default/php-apache-d87786b54-wsfqp is unschedulable
@@ -102,7 +120,7 @@ AUTOSCALER (UTC)
 
 PROVIDER (UTC)
   19:47:06  scale up agents: 1 -> 2
-  19:47:06  + k3d node create auto-agent-519b9f
+  19:47:06  + scripts/create-node.sh app 519b9f
 ```
 
 | Line | Meaning |
@@ -135,7 +153,7 @@ docker compose run --rm k8s kubectl apply -f manifests/load.yaml
 1. CPU rises above 50 %, the HPA adds pods (1 → 2 → 4 → 6).
 2. One agent fits 4 pods; the rest stay `Pending` with `Insufficient cpu`.
 3. Autoscaler logs `Scale-up: setting group agents size to 2`, the provider logs
-   `k3d node create`, the node turns `Ready` and the Pending pods start.
+   `create-node.sh app <id>`, the node turns `Ready` and the Pending pods start.
 4. Ends at 6 pods on 2 agents after about 4 minutes.
 
 ### Scale down
@@ -165,7 +183,7 @@ docker compose stop autoscaler
 docker compose run --rm k8s python3 provider/client.py groups      # agents min=1 max=5 target=1
 docker compose run --rm k8s python3 provider/client.py increase 1
 docker compose run --rm k8s python3 provider/client.py nodes
-docker compose run --rm k8s python3 provider/client.py delete k3d-auto-agent-<id>-0
+docker compose run --rm k8s python3 provider/client.py delete k3d-auto-app-<id>-0
 ```
 
 ## Delete everything
@@ -198,6 +216,14 @@ The autoscaler retries on its own, as it does when an EC2 launch fails.
 - The provider speaks plain gRPC without TLS and listens on localhost only.
   Upstream recommends mTLS for anything real.
 - Node size is set with `NODE_CPU` in `compose.yaml`; group size with `MIN` / `MAX`.
+- The provider counts only agents with the Docker label `autoscaling.group=agents`
+  (set by `create-node.sh app`) as members of its group, so the autoscaler never
+  touches the load node. On AWS these would be two node groups, of which only one
+  is registered with the Cluster Autoscaler.
+- The role shown by `kubectl get nodes` is the label `node-role.kubernetes.io/<role>`.
+  A kubelet may not give it to itself, so `create-node.sh` sets it with `kubectl label`
+  once the node has joined. Pods therefore select nodes by `workload=`, a label the
+  node has from its first second.
 - The demo is sized to need 2 agents (6 pods, 4 visitors), which fits a host with
   the default inotify limit. For a bigger run raise the limit (see Troubleshooting),
   then raise `maxReplicas` in `app.yaml` and `replicas` in `load.yaml`: one visitor
