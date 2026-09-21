@@ -11,8 +11,9 @@ Repository: `git@github.com:mpecha/k8s-course.git`
 |-----------|-------------|
 | [`1-k8s-cluster/kind`](1-k8s-cluster/kind/README.md) | Cluster built with [kind](https://kind.sigs.k8s.io/): 1 control-plane + 5 workers |
 | [`1-k8s-cluster/k3d`](1-k8s-cluster/k3d/README.md) | Cluster built with [k3d](https://k3d.io/) (k3s in Docker): 1 server + 5 agents, nodes can be added and removed at runtime |
+| [`2-autoscaling/k3d`](2-autoscaling/k3d/README.md) | Autoscaling as on AWS/EKS: HPA plus the real Cluster Autoscaler, with k3d agents standing in for an EC2 Auto Scaling group |
 
-Both variants share the same layout and workflow:
+Both `1-k8s-cluster` variants share the same layout and workflow:
 
 ```text
 1-k8s-cluster/<flavour>/

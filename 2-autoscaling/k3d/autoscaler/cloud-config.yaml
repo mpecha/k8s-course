@@ -1,0 +1,3 @@
+# Where the Cluster Autoscaler finds its "cloud" (the provider service).
+# No key/cert/cacert: plain gRPC, the provider only listens on localhost.
+address: "127.0.0.1:8086"

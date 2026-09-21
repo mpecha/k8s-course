@@ -1,0 +1,58 @@
+# Explicit name: the lab 1 directory is also called "k3d"
+name: autoscaling
+
+x-tools: &tools
+  build: .
+  image: autoscaling-tools
+  network_mode: host
+
+  volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+    - ./:/workspace
+
+  environment: &env
+    KUBECONFIG: /workspace/.kube/config
+    CLUSTER: auto
+    NODE_CPU: "2"
+
+  working_dir: /workspace
+
+services:
+  # Tools container: k3d, kubectl, helm
+  k8s:
+    <<: *tools
+
+  # Plays the AWS Auto Scaling group: adds and removes k3d agent nodes
+  provider:
+    <<: *tools
+    command: python3 provider/provider.py
+    environment:
+      <<: *env
+      MIN: "1"
+      MAX: "5"
+    restart: unless-stopped
+
+  # The real Cluster Autoscaler, same image as on EKS. There it runs as a
+  # Deployment with --cloud-provider=aws; here it runs next to the cluster.
+  autoscaler:
+    image: registry.k8s.io/autoscaling/cluster-autoscaler:v1.33.6
+    network_mode: host
+    user: "0" # the kubeconfig written by k3d is readable by root only
+    volumes:
+      - ./.kube/config:/kube/config:ro
+      - ./autoscaler/cloud-config.yaml:/config/cloud-config.yaml:ro
+    command:
+      - ./cluster-autoscaler
+      - --cloud-provider=externalgrpc
+      - --cloud-config=/config/cloud-config.yaml
+      - --kubeconfig=/kube/config
+      - --leader-elect=false
+      - --scan-interval=10s
+      # defaults are 10m, 10m and 5m; shortened so the demo scales down quickly
+      - --scale-down-unneeded-time=1m
+      - --scale-down-delay-after-add=1m
+      - --unremovable-node-recheck-timeout=1m
+      - --v=1
+    depends_on:
+      - provider
+    restart: unless-stopped
